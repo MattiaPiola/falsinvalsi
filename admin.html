@@ -749,7 +749,7 @@ async function loadTests() {
   }
 
   try {
-    const { data, error } = await sb.from('tests').select('id, title, created_at').order('created_at', { ascending: false });
+    const { data, error } = await sb.from('tests').select('id, title, created_at, active').order('created_at', { ascending: false });
     if (error) throw error;
     allTests = data || [];
   } catch (e) {
@@ -782,16 +782,25 @@ function renderTestsTable(tests) {
     <table class="data-table">
       <thead><tr>
         <th>Titolo</th>
+        <th>Stato</th>
         <th>Creato il</th>
         <th>Azioni</th>
       </tr></thead>
       <tbody>`;
   tests.forEach(t => {
-    const date = new Date(t.created_at).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+    const date       = new Date(t.created_at).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+    const isActive   = t.active !== false;
+    const stateBadge = isActive
+      ? '<span style="color:#2e7d32;font-weight:700;">● Attivo</span>'
+      : '<span style="color:#999;font-weight:700;">○ Inattivo</span>';
+    const toggleLabel = isActive ? '⏸ Disattiva' : '▶ Attiva';
+    const toggleCls   = isActive ? 'btn-outline' : 'btn-success';
     html += `<tr>
       <td><strong>${escHtml(t.title)}</strong></td>
+      <td>${stateBadge}</td>
       <td>${date}</td>
       <td>
+        <button class="btn ${toggleCls} btn-sm" onclick="toggleTestActive('${t.id}', ${isActive})">${toggleLabel}</button>
         <button class="btn btn-outline btn-sm" onclick="showTestLink('${t.id}')">🔗 Link</button>
         <button class="btn btn-outline btn-sm" onclick="viewTestJSON('${t.id}')">👁 JSON</button>
         <button class="btn btn-danger btn-sm" onclick="confirmDeleteTest('${t.id}', '${escAttr(t.title)}')">🗑 Elimina</button>
@@ -817,6 +826,20 @@ function copyTestLink() {
   } catch (_) {
     document.execCommand('copy');
     showToast('Link copiato!');
+  }
+}
+
+async function toggleTestActive(id, currentlyActive) {
+  if (!sb) return;
+  const newActive = !currentlyActive;
+  try {
+    const { error } = await sb.from('tests').update({ active: newActive }).eq('id', id);
+    if (error) throw error;
+    showToast(newActive ? 'Test attivato.' : 'Test disattivato.');
+    await loadTests();
+  } catch (e) {
+    console.error(e);
+    showToast('Errore nell\'aggiornamento dello stato: ' + e.message);
   }
 }
 

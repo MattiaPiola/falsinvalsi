@@ -1093,6 +1093,167 @@ async function loadTestFromSupabase(testId) {
 }
 
 /* ============================================================
+   TEST SELECTION MODAL
+   ============================================================ */
+async function showTestSelectionModal() {
+  const modal    = document.getElementById('modal-test-select');
+  const listEl   = document.getElementById('test-select-list');
+  listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">Caricamento…</div>';
+  modal.style.display = 'flex';
+
+  if (!supabaseClient) {
+    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">Supabase non configurato – uso dati predefiniti.</div>';
+    setTimeout(() => {
+      modal.style.display = 'none';
+      startTest();
+    }, 1500);
+    return;
+  }
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('tests')
+      .select('id, title')
+      .eq('active', true)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+
+    const tests = data || [];
+    if (tests.length === 0) {
+      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">Nessun test attivo disponibile al momento.</div>';
+      return;
+    }
+
+    listEl.innerHTML = '';
+    tests.forEach(t => {
+      const btn = document.createElement('button');
+      btn.className = 'test-select-item';
+      btn.innerHTML = `<span>${t.title}</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>`;
+      btn.addEventListener('click', () => selectTestFromModal(t.id));
+      listEl.appendChild(btn);
+    });
+  } catch (e) {
+    console.error('Load active tests error:', e);
+    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#c0392b;">Errore nel caricamento dei test.</div>';
+  }
+}
+
+async function selectTestFromModal(testId) {
+  document.getElementById('modal-test-select').style.display = 'none';
+  const loaded = await loadTestFromSupabase(testId);
+  if (!loaded) showToast('Impossibile caricare il test selezionato.');
+
+  /* Reset state for the newly selected test */
+  const name = state.studentName;
+  state = Object.assign({}, DEFAULT_STATE, {
+    flagged:      new Set(),
+    viewed:       new Set(),
+    studentName:  name,
+    loadedTestId: testId,
+  });
+  saveState();
+
+  startTest();
+}
+
+function startTest() {
+  markViewed();
+  renderAll();
+  if (!state.studentName) showStudentNameModal();
+}
+
+/* ============================================================
+   ANSWER REVIEW (post-submission)
+   ============================================================ */
+function showAnswerReview() {
+  const modal = document.getElementById('modal-answer-review');
+  const body  = document.getElementById('answer-review-body');
+
+  let html = '';
+  SECTIONS.forEach((sec, sIdx) => {
+    html += `<p class="review-section-title">${escHtmlApp(sec.title)}</p>`;
+    sec.questions.forEach((q, qIdx) => {
+      const key       = qKey(sIdx, qIdx);
+      const given     = state.answers[key];
+      const correct   = q.correct;
+      const isCorrect = given === correct;
+      const noAnswer  = !given;
+
+      const resultIcon  = noAnswer ? '<span class="rq-no-answer">—</span>'
+                        : isCorrect ? '<span class="rq-correct">✓</span>'
+                        : '<span class="rq-wrong">✗</span>';
+      const resultLabel = noAnswer ? 'Senza risposta' : isCorrect ? 'Corretta' : 'Errata';
+
+      html += `<div class="review-question">
+        <div class="review-question-header">
+          <span>Dom. ${qIdx + 1}</span>
+          <span>${resultLabel}</span>
+          <span class="rq-result">${resultIcon}</span>
+        </div>
+        <div class="review-question-body">
+          <div class="rq-text">${escHtmlApp(q.text)}</div>
+          <div class="rq-answers">`;
+
+      q.options.forEach(opt => {
+        const isGiven      = opt.label === given;
+        const isCorrectOpt = opt.label === correct;
+        let cls = '';
+        if (isGiven && isCorrectOpt) cls = 'both';
+        else if (isGiven)            cls = 'missed';
+        else if (isCorrectOpt)       cls = 'correct-answer';
+        if (isGiven || isCorrectOpt) {
+          html += `<span class="rq-answer ${cls}">${escHtmlApp(opt.label)}: ${escHtmlApp(opt.text)}</span>`;
+        }
+      });
+
+      html += `</div></div></div>`;
+    });
+  });
+
+  body.innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+function escHtmlApp(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* ============================================================
+   RESET FOR NEW USER
+   ============================================================ */
+function resetForNewUser() {
+  /* Keep the current test, reset all student-specific state */
+  const testId = state.loadedTestId;
+  state = Object.assign({}, DEFAULT_STATE, {
+    flagged:      new Set(),
+    viewed:       new Set(),
+    studentName:  '',
+    loadedTestId: testId,
+  });
+  saveState();
+
+  /* Hide submission-complete page, show the main app */
+  document.getElementById('submission-complete').style.display = 'none';
+  document.getElementById('modal-answer-review').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+
+  /* If Supabase is configured and no test is loaded, show selection modal */
+  if (supabaseClient && !testId) {
+    showTestSelectionModal();
+  } else {
+    startTest();
+  }
+}
+
+/* ============================================================
    INIT
    ============================================================ */
 async function init() {
@@ -1102,38 +1263,57 @@ async function init() {
   const testParam = params.get('test_id');
 
   if (testParam) {
+    /* Direct link to a specific test – load it straight away */
     const loaded = await loadTestFromSupabase(testParam);
     if (!loaded) showToast('Impossibile caricare il test. Uso dati predefiniti.');
+
+    loadState();
+
+    /* If the test_id changed (or first time with this test), reset progress */
+    if (state.loadedTestId !== testParam) {
+      const name = state.studentName;
+      state = Object.assign({}, DEFAULT_STATE, {
+        flagged:      new Set(),
+        viewed:       new Set(),
+        studentName:  name,
+        loadedTestId: testParam,
+      });
+      saveState();
+    }
+
+    if (state.submitted) {
+      showSubmissionComplete(state.lastScore, state.lastTotal, true);
+      return;
+    }
+
+    startTest();
+    return;
   }
 
+  /* No test_id in URL – show test selection if Supabase is configured */
   loadState();
 
-  /* If the test_id changed (or first time with this test), reset progress */
-  if (testParam && state.loadedTestId !== testParam) {
-    const name = state.studentName;
-    state = Object.assign({}, DEFAULT_STATE, {
-      flagged:      new Set(),
-      viewed:       new Set(),
-      studentName:  name,
-      loadedTestId: testParam,
-    });
-    saveState();
-  }
-
-  /* If already submitted, go straight to the completion page */
   if (state.submitted) {
+    /* Reload the test data so the review can work */
+    if (state.loadedTestId && supabaseClient) {
+      await loadTestFromSupabase(state.loadedTestId);
+    }
     showSubmissionComplete(state.lastScore, state.lastTotal, true);
     return;
   }
 
-  /* mark current question as viewed on first load */
-  markViewed();
-  renderAll();
-
-  /* Show student name modal if name not yet entered */
-  if (!state.studentName) {
-    showStudentNameModal();
+  if (supabaseClient && !state.loadedTestId) {
+    await showTestSelectionModal();
+    return;
   }
+
+  /* If a test was previously loaded and is stored, reload it */
+  if (state.loadedTestId && supabaseClient) {
+    const loaded = await loadTestFromSupabase(state.loadedTestId);
+    if (!loaded) showToast('Impossibile ricaricare il test precedente. Uso dati predefiniti.');
+  }
+
+  startTest();
 }
 
 document.addEventListener('DOMContentLoaded', init);
