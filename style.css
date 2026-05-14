@@ -4,20 +4,21 @@
 
 /* ---- Variables ---- */
 :root {
-  --primary:       #1e5a96;
-  --primary-dark:  #163f6a;
-  --sidebar-bg:    #f5f5f5;
-  --border:        #ddd;
-  --text:          #333;
-  --title:         #1a1a1a;
-  --text-bg:       #fffaf0;
-  --info-bg:       #e8f1f8;
-  --answered-clr:  #2e7d32;
-  --flagged-clr:   #e65100;
-  --viewed-clr:    #1565c0;
-  --active-bg:     #cfe2f3;
-  --h:             60px;   /* header/footer height */
-  --sw:            280px;  /* sidebar width */
+  --primary:        #1e5a96;
+  --primary-dark:   #163f6a;
+  --primary-border: rgba(30, 90, 150, 0.24);
+  --sidebar-bg:     #f5f5f5;
+  --border:         #ddd;
+  --text:           #333;
+  --title:          #1a1a1a;
+  --text-bg:        #fffaf0;
+  --info-bg:        #e8f1f8;
+  --answered-clr:   #2e7d32;
+  --flagged-clr:    #e65100;
+  --viewed-clr:     #1565c0;
+  --active-bg:      #cfe2f3;
+  --h:              60px;   /* header/footer height */
+  --sw:             280px;  /* sidebar width */
 }
 
 /* ---- Reset ---- */
@@ -435,7 +436,7 @@ svg { display: block; flex-shrink: 0; }
 #footer {
   height: var(--h);
   background: var(--primary);
-  border-top: 1px solid #1356913c;
+  border-top: 1px solid var(--primary-border);
   display: flex;
   align-items: center;
   justify-content: space-between;

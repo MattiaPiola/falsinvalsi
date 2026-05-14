@@ -380,7 +380,7 @@ function saveState() {
       flagged:         [...state.flagged],
       viewed:          [...state.viewed],
     }));
-  } catch (_) {}
+  } catch (_) { /* localStorage unavailable (private mode or quota exceeded) – silently ignore */ }
 }
 
 function loadState() {
@@ -393,7 +393,7 @@ function loadState() {
     state.answers         = p.answers  || {};
     state.flagged         = new Set(p.flagged || []);
     state.viewed          = new Set(p.viewed  || []);
-  } catch (_) {}
+  } catch (_) { /* Corrupt data in localStorage – start fresh */ }
 }
 
 /* ============================================================
@@ -700,7 +700,11 @@ function doHighlight() {
     mark.className = 'hl';
     range.surroundContents(mark);
     sel.removeAllRanges();
-  } catch (_) { /* cross-node selection – ignore */ }
+  } catch (_) {
+    /* surroundContents fails for cross-node selections (e.g. spanning multiple tags) */
+    sel.removeAllRanges();
+    showToast('Seleziona testo all\'interno di un singolo paragrafo per evidenziare');
+  }
 }
 
 function clearHighlights() {
@@ -822,6 +826,13 @@ function toggleCalc() {
 function calcInput(key) {
   const display = document.getElementById('calc-display');
 
+  /* If calculator is in error state, only 'C' clears it */
+  if (ui.calcVal === 'Errore' && key !== 'C') {
+    display.style.color = '#ff453a';
+    setTimeout(() => { display.style.color = ''; }, 600);
+    return;
+  }
+
   if (key === 'C') {
     ui.calcVal = '0'; ui.calcOp = null; ui.calcPrev = null; ui.calcNewNum = true;
   } else if (key === '±') {
@@ -842,7 +853,8 @@ function calcInput(key) {
     if (ui.calcNewNum) { ui.calcVal = key; ui.calcNewNum = false; }
     else ui.calcVal = (ui.calcVal === '0' ? key : ui.calcVal + key);
   }
-  display.textContent = ui.calcVal.length > 12 ? parseFloat(ui.calcVal).toExponential(4) : ui.calcVal;
+  const num = parseFloat(ui.calcVal);
+  display.textContent = (!isNaN(num) && ui.calcVal.length > 12) ? num.toExponential(4) : ui.calcVal;
 }
 
 function calcDoOp() {
