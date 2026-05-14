@@ -10,7 +10,7 @@
 -- the admin write/delete policies with Supabase Auth or
 -- restrict them to a server-side service-role key.
 -- ==========================================================
-
+-- COMMENT TO TRIGGER REDEPLOY
 -- Tests table (created by admin, loaded by students via ?test_id=<uuid>)
 CREATE TABLE IF NOT EXISTS tests (
   id         uuid        DEFAULT gen_random_uuid() PRIMARY KEY,
