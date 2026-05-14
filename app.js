@@ -6,9 +6,32 @@
 'use strict';
 
 /* ============================================================
+   SUPABASE CLIENT
+   ============================================================ */
+let supabaseClient = null;
+
+function initSupabase() {
+  if (typeof supabase !== 'undefined' &&
+      typeof SUPABASE_URL !== 'undefined' && SUPABASE_URL &&
+      typeof SUPABASE_ANON_KEY !== 'undefined' && SUPABASE_ANON_KEY) {
+    try {
+      supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    } catch (e) {
+      console.warn('Supabase init failed:', e);
+    }
+  }
+}
+
+/* ============================================================
+   CURRENT TEST META (set when loading from Supabase)
+   ============================================================ */
+let currentTestId    = null;
+let currentTestTitle = null;
+
+/* ============================================================
    DATA  –  45 questions across 6 sections
    ============================================================ */
-const SECTIONS = [
+let SECTIONS = [
   /* ---- Testo 1 ---- */
   {
     id: 'testo-1',
@@ -311,16 +334,26 @@ La lettura è un'attività che <strong>______</strong> la mente, arricchisce il 
    STATE
    ============================================================ */
 const DEFAULT_STATE = {
-  currentSection: 0,
+  currentSection:  0,
   currentQuestion: 0,
-  answers: {},        /* key: "sIdx_qIdx" → label string */
-  flagged: [],        /* ["sIdx_qIdx", ...] */
-  viewed: [],         /* ["sIdx_qIdx", ...] */
+  answers:         {},        /* key: "sIdx_qIdx" → label string */
+  flagged:         [],        /* ["sIdx_qIdx", ...] */
+  viewed:          [],        /* ["sIdx_qIdx", ...] */
+  studentName:     '',        /* entered at start */
+  loadedTestId:    null,      /* UUID of the Supabase test, if any */
+  submitted:       false,     /* true after consegna */
+  lastScore:       0,
+  lastTotal:       0,
 };
 
 let state = Object.assign({}, DEFAULT_STATE, {
-  flagged: new Set(),
-  viewed:  new Set(),
+  flagged:     new Set(),
+  viewed:      new Set(),
+  studentName: '',
+  loadedTestId: null,
+  submitted:   false,
+  lastScore:   0,
+  lastTotal:   0,
 });
 
 /* UI-only state (not persisted) */
@@ -379,6 +412,11 @@ function saveState() {
       answers:         state.answers,
       flagged:         [...state.flagged],
       viewed:          [...state.viewed],
+      studentName:     state.studentName,
+      loadedTestId:    state.loadedTestId,
+      submitted:       state.submitted,
+      lastScore:       state.lastScore,
+      lastTotal:       state.lastTotal,
     }));
   } catch (_) { /* localStorage unavailable (private mode or quota exceeded) – silently ignore */ }
 }
@@ -393,6 +431,11 @@ function loadState() {
     state.answers         = p.answers  || {};
     state.flagged         = new Set(p.flagged || []);
     state.viewed          = new Set(p.viewed  || []);
+    state.studentName     = p.studentName  || '';
+    state.loadedTestId    = p.loadedTestId || null;
+    state.submitted       = p.submitted    || false;
+    state.lastScore       = p.lastScore    || 0;
+    state.lastTotal       = p.lastTotal    || 0;
   } catch (_) { /* Corrupt data in localStorage – start fresh */ }
 }
 
@@ -888,18 +931,209 @@ function showToast(msg) {
 }
 
 /* ============================================================
+   STUDENT NAME MODAL
+   ============================================================ */
+function showStudentNameModal() {
+  const modal = document.getElementById('modal-student');
+  modal.style.display = 'flex';
+  const input = document.getElementById('input-student-name');
+  input.value = '';
+  setTimeout(() => input.focus(), 60);
+
+  input.onkeydown = function(e) {
+    if (e.key === 'Enter') setStudentName();
+  };
+}
+
+function setStudentName() {
+  const input = document.getElementById('input-student-name');
+  const name  = (input.value || '').trim();
+  if (!name) {
+    input.style.borderColor = '#e74c3c';
+    input.focus();
+    setTimeout(() => { input.style.borderColor = ''; }, 1400);
+    return;
+  }
+  state.studentName = name;
+  saveState();
+  document.getElementById('modal-student').style.display = 'none';
+}
+
+/* ============================================================
+   SCORE CALCULATION
+   ============================================================ */
+function calculateScore() {
+  let score = 0;
+  SECTIONS.forEach((sec, sIdx) => {
+    sec.questions.forEach((q, qIdx) => {
+      if (state.answers[qKey(sIdx, qIdx)] === q.correct) score++;
+    });
+  });
+  return score;
+}
+
+/* ============================================================
+   SUBMIT – CONFIRMATION MODAL
+   ============================================================ */
+function showConfirmSubmit() {
+  if (state.submitted) { showToast('Il test è già stato consegnato.'); return; }
+
+  const total      = totalQuestions();
+  const answered   = answeredCount();
+  const unanswered = total - answered;
+  const flagged    = flaggedCount();
+
+  const statsHtml = `
+    <div class="submit-stat-row">
+      <span class="ss-label">Domande risposte</span>
+      <span class="ss-value ${answered === total ? 'ok' : ''}">${answered}/${total}</span>
+    </div>
+    <div class="submit-stat-row">
+      <span class="ss-label">Domande senza risposta</span>
+      <span class="ss-value ${unanswered > 0 ? 'warn' : 'ok'}">${unanswered}</span>
+    </div>
+    ${flagged > 0 ? `<div class="submit-stat-row">
+      <span class="ss-label">Contrassegnate per revisione</span>
+      <span class="ss-value warn">${flagged}</span>
+    </div>` : ''}
+  `;
+  document.getElementById('confirm-submit-stats').innerHTML = statsHtml;
+  document.getElementById('modal-confirm-submit').style.display = 'flex';
+}
+
+function closeConfirmSubmit() {
+  document.getElementById('modal-confirm-submit').style.display = 'none';
+}
+
+async function confirmSubmit() {
+  const confirmBtn  = document.getElementById('btn-confirm-submit');
+  const cancelBtn   = document.getElementById('btn-cancel-submit');
+  confirmBtn.disabled = true;
+  cancelBtn.disabled  = true;
+  confirmBtn.innerHTML = '<span class="modal-spinner"></span>Salvataggio…';
+
+  const score = calculateScore();
+  const total = totalQuestions();
+
+  if (supabaseClient) {
+    try {
+      const { error } = await supabaseClient
+        .from('submissions')
+        .insert({
+          test_id:      currentTestId || null,
+          student_name: state.studentName || 'Anonimo',
+          answers:      state.answers,
+          score:        score,
+          total:        total,
+        });
+      if (error) throw error;
+    } catch (e) {
+      console.error('Submission error:', e);
+      showToast('Errore nel salvataggio. Riprova.');
+      confirmBtn.disabled = false;
+      cancelBtn.disabled  = false;
+      confirmBtn.textContent = 'Conferma consegna';
+      return;
+    }
+  }
+
+  state.submitted  = true;
+  state.lastScore  = score;
+  state.lastTotal  = total;
+  saveState();
+
+  closeConfirmSubmit();
+  showSubmissionComplete(score, total, false);
+}
+
+/* ============================================================
+   SUBMISSION COMPLETE PAGE
+   ============================================================ */
+function showSubmissionComplete(score, total, fromCache) {
+  document.getElementById('app').style.display = 'none';
+  const page = document.getElementById('submission-complete');
+  page.style.display = 'flex';
+
+  document.getElementById('sc-student-name').textContent =
+    state.studentName ? `Studente: ${state.studentName}` : '';
+
+  const pct = total > 0 ? Math.round(score / total * 100) : 0;
+  document.getElementById('sc-score-value').textContent = `${score}/${total}`;
+  document.getElementById('sc-score-label').textContent = `${pct}% di risposte corrette`;
+
+  const now = new Date();
+  document.getElementById('sc-submitted-time').textContent =
+    `Consegnato il ${now.toLocaleDateString('it-IT')} alle ${now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+/* ============================================================
+   LOAD TEST FROM SUPABASE
+   ============================================================ */
+async function loadTestFromSupabase(testId) {
+  if (!supabaseClient) return false;
+  try {
+    const { data, error } = await supabaseClient
+      .from('tests')
+      .select('*')
+      .eq('id', testId)
+      .single();
+    if (error || !data) return false;
+
+    /* Replace built-in sections with loaded data */
+    SECTIONS.length = 0;
+    data.sections.forEach(s => SECTIONS.push(s));
+    currentTestId    = data.id;
+    currentTestTitle = data.title;
+    document.getElementById('header-title').textContent = data.title;
+    return true;
+  } catch (e) {
+    console.error('Load test error:', e);
+    return false;
+  }
+}
+
+/* ============================================================
    INIT
    ============================================================ */
-function init() {
+async function init() {
+  initSupabase();
+
+  const params    = new URLSearchParams(window.location.search);
+  const testParam = params.get('test_id');
+
+  if (testParam) {
+    const loaded = await loadTestFromSupabase(testParam);
+    if (!loaded) showToast('Impossibile caricare il test. Uso dati predefiniti.');
+  }
+
   loadState();
+
+  /* If the test_id changed (or first time with this test), reset progress */
+  if (testParam && state.loadedTestId !== testParam) {
+    const name = state.studentName;
+    state = Object.assign({}, DEFAULT_STATE, {
+      flagged:      new Set(),
+      viewed:       new Set(),
+      studentName:  name,
+      loadedTestId: testParam,
+    });
+    saveState();
+  }
+
+  /* If already submitted, go straight to the completion page */
+  if (state.submitted) {
+    showSubmissionComplete(state.lastScore, state.lastTotal, true);
+    return;
+  }
 
   /* mark current question as viewed on first load */
   markViewed();
-
   renderAll();
 
-  /* open current section in tree */
-  /* already handled by renderSidebar – current section is always open */
+  /* Show student name modal if name not yet entered */
+  if (!state.studentName) {
+    showStudentNameModal();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -286,6 +286,16 @@
 
     <!-- Right: Navigation -->
     <div class="footer-nav">
+      <button class="nav-btn nav-btn-submit" id="btn-submit" onclick="showConfirmSubmit()"
+              title="Consegna il test">
+        Consegna
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.5">
+          <polyline points="22 16.92v2.92a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07"/>
+          <polyline points="1 1 23 23"/>
+          <path d="M16 8H8l-4 9h16z"/>
+        </svg>
+      </button>
       <button class="nav-btn" id="btn-prev" onclick="navigatePrev()">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
              stroke="currentColor" stroke-width="2.5">
@@ -354,6 +364,47 @@
 <!-- Toast notification -->
 <div id="toast" class="toast" style="display:none;"></div>
 
+<!-- ========== STUDENT NAME MODAL ========== -->
+<div id="modal-student" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="modal-student-title">
+  <div class="modal-box">
+    <h2 id="modal-student-title">Benvenuto/a</h2>
+    <p class="modal-desc">Inserisci il tuo nome e cognome per iniziare il test.</p>
+    <input type="text" id="input-student-name" class="modal-input"
+           placeholder="Nome e Cognome" autocomplete="name" maxlength="100" />
+    <div class="modal-actions">
+      <button class="modal-btn primary" onclick="setStudentName()">Inizia il test</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== SUBMIT CONFIRMATION MODAL ========== -->
+<div id="modal-confirm-submit" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="modal-confirm-title">
+  <div class="modal-box">
+    <h2 id="modal-confirm-title">Consegna il test</h2>
+    <div id="confirm-submit-stats" class="submit-stats"></div>
+    <p class="modal-desc">Sei sicuro di voler consegnare il test? Questa azione <strong>non può essere annullata</strong>.</p>
+    <div class="modal-actions">
+      <button class="modal-btn secondary" id="btn-cancel-submit" onclick="closeConfirmSubmit()">Annulla</button>
+      <button class="modal-btn danger"    id="btn-confirm-submit" onclick="confirmSubmit()">Conferma consegna</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== SUBMISSION COMPLETE PAGE ========== -->
+<div id="submission-complete" class="submission-complete-page" style="display:none;" role="main">
+  <div class="sc-card">
+    <div class="sc-icon">✓</div>
+    <h1>Test consegnato!</h1>
+    <p class="sc-student" id="sc-student-name"></p>
+    <div class="sc-score"  id="sc-score-value"></div>
+    <p class="sc-score-label" id="sc-score-label"></p>
+    <p class="sc-time"    id="sc-submitted-time"></p>
+    <p class="sc-message">Puoi chiudere questa finestra.</p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="supabase-config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
