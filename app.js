@@ -331,7 +331,7 @@ La lettura è un'attività che <strong>______</strong> la mente, arricchisce il 
 ];
 
 /* Preserve built-in sections so they can be restored after a withdrawal */
-const DEFAULT_SECTIONS = SECTIONS.map(s => s);
+const DEFAULT_SECTIONS = JSON.parse(JSON.stringify(SECTIONS));
 
 /* ============================================================
    STATE
