@@ -330,6 +330,9 @@ La lettura è un'attività che <strong>______</strong> la mente, arricchisce il 
   }
 ];
 
+/* Preserve built-in sections so they can be restored after a withdrawal */
+const DEFAULT_SECTIONS = SECTIONS.map(s => s);
+
 /* ============================================================
    STATE
    ============================================================ */
@@ -361,6 +364,9 @@ let questionShuffles = {};
 
 /* Timer handle for the submit countdown */
 let submitTimerHandle = null;
+
+/* Timer handle for the withdraw countdown */
+let withdrawTimerHandle = null;
 
 /* UI-only state (not persisted) */
 let ui = {
@@ -1252,6 +1258,58 @@ function closeConfirmSubmit() {
   document.getElementById('modal-confirm-submit').style.display = 'none';
 }
 
+/* ============================================================
+   WITHDRAW (abandon without saving)
+   ============================================================ */
+function showWithdrawModal() {
+  const timerEl    = document.getElementById('withdraw-timer');
+  const confirmBtn = document.getElementById('btn-confirm-withdraw');
+  if (withdrawTimerHandle) { clearInterval(withdrawTimerHandle); withdrawTimerHandle = null; }
+
+  let remaining = 5;
+  confirmBtn.disabled = true;
+  timerEl.innerHTML = `Potrai abbandonare tra <span class="submit-timer-count">${remaining}</span>s`;
+  timerEl.style.display = 'block';
+  withdrawTimerHandle = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(withdrawTimerHandle);
+      withdrawTimerHandle = null;
+      confirmBtn.disabled = false;
+      timerEl.style.display = 'none';
+    } else {
+      timerEl.querySelector('.submit-timer-count').textContent = remaining;
+    }
+  }, 1000);
+
+  document.getElementById('modal-confirm-withdraw').style.display = 'flex';
+}
+
+function closeWithdrawModal() {
+  if (withdrawTimerHandle) { clearInterval(withdrawTimerHandle); withdrawTimerHandle = null; }
+  document.getElementById('modal-confirm-withdraw').style.display = 'none';
+}
+
+function confirmWithdraw() {
+  closeWithdrawModal();
+  /* Completely wipe state so the user starts fresh */
+  resetStateForTest(null);
+  currentTestId    = null;
+  currentTestTitle = null;
+  SECTIONS.length  = 0;
+  /* Reload built-in sections so the page is not empty if Supabase is unavailable */
+  DEFAULT_SECTIONS.forEach(s => SECTIONS.push(s));
+
+  document.getElementById('submission-complete').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+
+  if (supabaseClient) {
+    showTestSelectionModal();
+  } else {
+    startTest();
+  }
+}
+
 async function confirmSubmit() {
   const confirmBtn  = document.getElementById('btn-confirm-submit');
   const cancelBtn   = document.getElementById('btn-cancel-submit');
@@ -1558,8 +1616,8 @@ function resetForNewUser() {
   document.getElementById('modal-answer-review').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
-  /* If Supabase is configured and no test is loaded, show selection modal */
-  if (supabaseClient && !testId) {
+  /* Always show test selection for a new user when Supabase is configured */
+  if (supabaseClient) {
     showTestSelectionModal();
   } else {
     startTest();
