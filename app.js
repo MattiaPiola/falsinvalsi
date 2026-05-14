@@ -444,12 +444,12 @@ function getShuffledOptions(sIdx, qIdx) {
   const opts = SECTIONS[sIdx].questions[qIdx].options;
   if (!opts || !opts.length) return [];
   if (!questionShuffles[key]) {
-    const idx = opts.map((_, i) => i);
-    for (let i = idx.length - 1; i > 0; i--) {
+    const indices = opts.map((_, i) => i);
+    for (let i = indices.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [idx[i], idx[j]] = [idx[j], idx[i]];
+      [indices[i], indices[j]] = [indices[j], indices[i]];
     }
-    questionShuffles[key] = idx;
+    questionShuffles[key] = indices;
   }
   return questionShuffles[key].map(i => opts[i]);
 }
@@ -462,18 +462,18 @@ function buildClozeHtml(q, key) {
                   ? state.answers[key] : {};
   let html = q.text || '';
   blanks.forEach(blank => {
-    const bid = String(blank.id);
-    const val = curAns[bid] || '';
-    const ph  = `{{${blank.id}}}`;
+    const blankId     = String(blank.id);
+    const blankValue  = curAns[blankId] || '';
+    const placeholder = `{{${blank.id}}}`;
     if (blank.options && blank.options.length > 0) {
       const opts = ['', ...blank.options].map(o =>
-        `<option value="${escHtmlApp(o)}"${val === o && o ? ' selected' : ''}>${o ? escHtmlApp(o) : '—'}</option>`
+        `<option value="${escHtmlApp(o)}"${blankValue === o && o ? ' selected' : ''}>${o ? escHtmlApp(o) : '—'}</option>`
       ).join('');
-      html = html.replace(ph,
-        `<select class="cloze-blank-select" data-blank-id="${bid}">${opts}</select>`);
+      html = html.replace(placeholder,
+        `<select class="cloze-blank-select" data-blank-id="${blankId}">${opts}</select>`);
     } else {
-      html = html.replace(ph,
-        `<input type="text" class="cloze-blank" data-blank-id="${bid}" value="${escHtmlApp(val)}" placeholder="…">`);
+      html = html.replace(placeholder,
+        `<input type="text" class="cloze-blank" data-blank-id="${blankId}" value="${escHtmlApp(blankValue)}" placeholder="…">`);
     }
   });
   return html;
@@ -485,9 +485,9 @@ function saveClozeAnswer(key, q, container) {
   const ans    = {};
   let anyFilled = false;
   blanks.forEach(blank => {
-    const bid = String(blank.id);
-    const el  = container.querySelector(`[data-blank-id="${bid}"]`);
-    if (el && el.value.trim()) { ans[bid] = el.value; anyFilled = true; }
+    const blankId = String(blank.id);
+    const el      = container.querySelector(`[data-blank-id="${blankId}"]`);
+    if (el && el.value.trim()) { ans[blankId] = el.value; anyFilled = true; }
   });
   if (anyFilled) state.answers[key] = ans;
   else           delete state.answers[key];
@@ -1161,9 +1161,9 @@ function calculateScore() {
       } else if (type === 'cloze') {
         if (q.blanks && q.correct && typeof ans === 'object' && !Array.isArray(ans)) {
           const allOk = q.blanks.every(b => {
-            const bid = String(b.id);
-            return (ans[bid] || '').trim().toLowerCase() ===
-                   (q.correct[bid] || '').trim().toLowerCase();
+            const blankId = String(b.id);
+            return (ans[blankId] || '').trim().toLowerCase() ===
+                   (q.correct[blankId] || '').trim().toLowerCase();
           });
           if (allOk) score++;
         }
@@ -1492,9 +1492,9 @@ function showAnswerReview() {
         const ansObj   = (ans && typeof ans === 'object' && !Array.isArray(ans)) ? ans : {};
         const noAnswer = !Object.keys(ansObj).length;
         const allOk    = !noAnswer && blanks.every(b => {
-          const bid = String(b.id);
-          return (ansObj[bid] || '').trim().toLowerCase() ===
-                 (correct[bid]  || '').trim().toLowerCase();
+          const blankId = String(b.id);
+          return (ansObj[blankId] || '').trim().toLowerCase() ===
+                 (correct[blankId]  || '').trim().toLowerCase();
         });
         resultIcon  = noAnswer ? '<span class="rq-no-answer">—</span>'
                     : allOk    ? '<span class="rq-correct">✓</span>'
@@ -1502,12 +1502,12 @@ function showAnswerReview() {
         resultLabel = noAnswer ? 'Senza risposta' : allOk ? 'Corretta' : 'Errata';
         answersHtml = '';
         blanks.forEach(b => {
-          const bid      = String(b.id);
-          const given    = ansObj[bid] || '';
-          const expected = correct[bid] || '';
+          const blankId  = String(b.id);
+          const given    = ansObj[blankId] || '';
+          const expected = correct[blankId] || '';
           const isOk     = given.trim().toLowerCase() === expected.trim().toLowerCase();
           const cls      = !given ? '' : isOk ? 'both' : 'missed';
-          answersHtml += `<span class="rq-answer ${cls}">Spazio ${bid}: ${escHtmlApp(given) || '—'}</span>`;
+          answersHtml += `<span class="rq-answer ${cls}">Spazio ${blankId}: ${escHtmlApp(given) || '—'}</span>`;
           if (!isOk && expected) {
             answersHtml += `<span class="rq-answer correct-answer">${escHtmlApp(expected)}</span>`;
           }
