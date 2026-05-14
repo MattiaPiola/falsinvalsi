@@ -878,29 +878,33 @@ function validateTestJSON() {
     for (let sIdx = 0; sIdx < parsed.length; sIdx++) {
       const sec = parsed[sIdx];
       const secLabel = `Sezione ${sIdx + 1}`;
-      if (!sec.id)    return fail(`${secLabel}: manca il campo "id".`);
-      if (!sec.title) return fail(`${secLabel}: manca il campo "title".`);
+      if (sec.id == null || String(sec.id).trim() === '')
+        return fail(`${secLabel}: manca il campo "id" (deve essere una stringa non vuota).`);
+      if (typeof sec.title !== 'string' || !sec.title.trim())
+        return fail(`${secLabel}: manca il campo "title" (deve essere una stringa non vuota).`);
       if (!Array.isArray(sec.questions))
         return fail(`${secLabel} ("${sec.title}"): manca il campo "questions" (deve essere un array).`);
       for (let qIdx = 0; qIdx < sec.questions.length; qIdx++) {
         const q = sec.questions[qIdx];
         const qLabel = `Sezione ${sIdx + 1} ("${sec.title}"), domanda ${qIdx + 1}`;
-        if (!q.id)   return fail(`${qLabel}: manca il campo "id".`);
-        if (!q.text) return fail(`${qLabel}: manca il campo "text".`);
+        if (q.id == null || String(q.id).trim() === '')
+          return fail(`${qLabel}: manca il campo "id" (deve essere una stringa non vuota).`);
+        if (typeof q.text !== 'string' || !q.text.trim())
+          return fail(`${qLabel}: manca il campo "text" (deve essere una stringa non vuota).`);
         const type = q.type || 'single';
         if (!['single', 'multiple', 'open', 'cloze'].includes(type))
           return fail(`${qLabel}: tipo "${type}" non riconosciuto (valori ammessi: single, multiple, open, cloze).`);
         if (type === 'single' || type === 'multiple') {
           if (!Array.isArray(q.options) || q.options.length === 0)
             return fail(`${qLabel}: tipo "${type}" richiede il campo "options" (array non vuoto).`);
-          if (type === 'single' && !q.correct)
-            return fail(`${qLabel}: tipo "single" richiede il campo "correct" (stringa).`);
+          if (type === 'single' && (typeof q.correct !== 'string' || !q.correct.trim()))
+            return fail(`${qLabel}: tipo "single" richiede il campo "correct" (stringa non vuota).`);
           if (type === 'multiple' && !Array.isArray(q.correct))
             return fail(`${qLabel}: tipo "multiple" richiede il campo "correct" (array di stringhe).`);
         } else if (type === 'cloze') {
           if (!Array.isArray(q.blanks) || q.blanks.length === 0)
             return fail(`${qLabel}: tipo "cloze" richiede il campo "blanks" (array non vuoto).`);
-          if (!q.correct || typeof q.correct !== 'object' || Array.isArray(q.correct))
+          if (q.correct == null || typeof q.correct !== 'object' || Array.isArray(q.correct))
             return fail(`${qLabel}: tipo "cloze" richiede il campo "correct" (oggetto con le risposte attese).`);
         }
       }
