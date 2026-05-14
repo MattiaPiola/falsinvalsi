@@ -6,5 +6,7 @@
 const SUPABASE_URL = '';      // e.g. 'https://xxxxxxxxxxxx.supabase.co'
 const SUPABASE_ANON_KEY = ''; // your project's anon/public key
 
-// Password for the admin panel (/admin.html) – change before deploying!
-const ADMIN_PASSWORD = 'admin123';
+// Password for the admin panel (/admin.html).
+// IMPORTANT: set a strong password before deploying publicly.
+// Leave empty ('') to show a reminder on the admin login page.
+const ADMIN_PASSWORD = '';

@@ -2,6 +2,15 @@
 -- falsinvalsi – Supabase Database Setup
 -- Run in: Supabase Dashboard → SQL Editor
 -- ==========================================================
+--
+-- SECURITY NOTE: This schema uses permissive RLS policies
+-- suitable for a classroom/demo environment with a static
+-- frontend.  The admin panel is protected only by a
+-- client-side password check using the anon key.
+-- For a production deployment with sensitive data, replace
+-- the admin write/delete policies with Supabase Auth or
+-- restrict them to a server-side service-role key.
+-- ==========================================================
 
 -- Tests table (created by admin, loaded by students via ?test_id=<uuid>)
 CREATE TABLE IF NOT EXISTS tests (

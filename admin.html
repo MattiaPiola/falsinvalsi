@@ -662,9 +662,13 @@ const JSON_EXAMPLE = [
 function adminLogin() {
   const pwd = document.getElementById('login-password').value;
   const errEl = document.getElementById('login-error');
-  if (!pwd) { errEl.textContent = 'Inserisci la password.'; return; }
 
-  const expected = (typeof ADMIN_PASSWORD !== 'undefined') ? ADMIN_PASSWORD : 'admin123';
+  const expected = (typeof ADMIN_PASSWORD !== 'undefined') ? ADMIN_PASSWORD : '';
+  if (!expected) {
+    errEl.textContent = 'Configura ADMIN_PASSWORD in supabase-config.js prima di usare il pannello admin.';
+    return;
+  }
+  if (!pwd) { errEl.textContent = 'Inserisci la password.'; return; }
   if (pwd !== expected) {
     errEl.textContent = 'Password errata.';
     document.getElementById('login-password').value = '';
