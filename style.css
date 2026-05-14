@@ -653,6 +653,195 @@ mark.hl {
 ::-webkit-scrollbar-thumb:hover { background: #999; }
 
 /* ============================================================
+   CONSEGNA BUTTON
+   ============================================================ */
+.nav-btn-submit {
+  background: rgba(200, 50, 30, 0.82);
+  border-color: rgba(255,255,255,.65);
+}
+.nav-btn-submit:hover { background: rgba(200, 50, 30, 1); }
+
+/* ============================================================
+   MODAL OVERLAY
+   ============================================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.58);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 900;
+  backdrop-filter: blur(2px);
+}
+
+.modal-box {
+  background: #fff;
+  border-radius: 8px;
+  padding: 32px 36px;
+  max-width: 460px;
+  width: 90%;
+  box-shadow: 0 8px 40px rgba(0,0,0,.3);
+}
+
+.modal-box h2 {
+  font-size: 19px;
+  color: var(--title);
+  margin-bottom: 10px;
+}
+
+.modal-box > p, .modal-box .modal-desc {
+  color: #555;
+  font-size: 13px;
+  line-height: 1.55;
+  margin-bottom: 18px;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 15px;
+  font-family: inherit;
+  margin-bottom: 16px;
+  outline: none;
+  box-sizing: border-box;
+}
+.modal-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(30,90,150,.15); }
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.modal-btn {
+  padding: 9px 22px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: background .1s;
+  font-family: inherit;
+}
+.modal-btn.primary   { background: var(--primary); color: #fff; }
+.modal-btn.primary:hover { background: var(--primary-dark); }
+.modal-btn.danger    { background: #c0392b; color: #fff; }
+.modal-btn.danger:hover { background: #a93226; }
+.modal-btn.secondary { background: #fff; color: var(--text); border: 1px solid #ccc; }
+.modal-btn.secondary:hover { background: #f4f4f4; }
+
+/* --- Submit stats inside confirmation modal --- */
+.submit-stats {
+  background: #f7f7f7;
+  border: 1px solid #e4e4e4;
+  border-radius: 4px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.submit-stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 13px;
+}
+.submit-stat-row .ss-label { color: #555; }
+.submit-stat-row .ss-value { font-weight: 700; }
+.submit-stat-row .ss-value.ok   { color: var(--answered-clr); }
+.submit-stat-row .ss-value.warn { color: var(--flagged-clr); }
+
+/* --- Loading spinner inside modal --- */
+.modal-spinner {
+  display: inline-block;
+  width: 18px; height: 18px;
+  border: 3px solid rgba(255,255,255,.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   SUBMISSION COMPLETE PAGE
+   ============================================================ */
+.submission-complete-page {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #1e5a96 0%, #163f6a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.sc-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 48px 52px;
+  text-align: center;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 24px 64px rgba(0,0,0,.35);
+}
+
+.sc-icon {
+  width: 72px; height: 72px;
+  background: #4caf50;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 38px;
+  margin: 0 auto 22px;
+  box-shadow: 0 4px 16px rgba(76,175,80,.4);
+}
+
+.sc-card h1 {
+  font-size: 26px;
+  color: var(--title);
+  margin-bottom: 6px;
+}
+
+.sc-student {
+  font-size: 17px;
+  color: var(--primary);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.sc-score {
+  font-size: 52px;
+  font-weight: 700;
+  color: var(--primary);
+  line-height: 1;
+  margin: 16px 0 4px;
+}
+
+.sc-score-label {
+  font-size: 13px;
+  color: #777;
+  margin-bottom: 16px;
+}
+
+.sc-time {
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 24px;
+}
+
+.sc-message {
+  font-size: 13px;
+  color: #888;
+  font-style: italic;
+}
+
+/* ============================================================
    RESPONSIVE
    ============================================================ */
 @media (max-width: 1024px) {
