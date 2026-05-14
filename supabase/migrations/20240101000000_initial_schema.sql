@@ -1,6 +1,5 @@
 -- ==========================================================
 -- falsinvalsi – Supabase Database Setup
--- Run in: Supabase Dashboard → SQL Editor
 -- ==========================================================
 --
 -- SECURITY NOTE: This schema uses permissive RLS policies
