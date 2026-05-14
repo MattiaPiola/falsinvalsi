@@ -1303,11 +1303,7 @@ function confirmWithdraw() {
   document.getElementById('submission-complete').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
-  if (supabaseClient) {
-    showTestSelectionModal();
-  } else {
-    startTest();
-  }
+  showTestSelectionModal();
 }
 
 async function confirmSubmit() {
@@ -1407,11 +1403,7 @@ async function showTestSelectionModal() {
   modal.style.display = 'flex';
 
   if (!supabaseClient) {
-    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">Supabase non configurato – uso dati predefiniti.</div>';
-    setTimeout(() => {
-      modal.style.display = 'none';
-      startTest();
-    }, 1500);
+    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:#c0392b;">Nessun servizio di test configurato.</div>';
     return;
   }
 
@@ -1449,7 +1441,11 @@ async function showTestSelectionModal() {
 async function selectTestFromModal(testId) {
   document.getElementById('modal-test-select').style.display = 'none';
   const loaded = await loadTestFromSupabase(testId);
-  if (!loaded) showToast('Impossibile caricare il test selezionato.');
+  if (!loaded) {
+    showToast('Impossibile caricare il test selezionato.');
+    showTestSelectionModal();
+    return;
+  }
 
   resetStateForTest(testId, state.studentName);
   startTest();
@@ -1616,12 +1612,8 @@ function resetForNewUser() {
   document.getElementById('modal-answer-review').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
-  /* Always show test selection for a new user when Supabase is configured */
-  if (supabaseClient) {
-    showTestSelectionModal();
-  } else {
-    startTest();
-  }
+  /* Always show test selection for a new user */
+  showTestSelectionModal();
 }
 
 /* ============================================================
@@ -1636,7 +1628,11 @@ async function init() {
   if (testParam) {
     /* Direct link to a specific test – load it straight away */
     const loaded = await loadTestFromSupabase(testParam);
-    if (!loaded) showToast('Impossibile caricare il test. Uso dati predefiniti.');
+    if (!loaded) {
+      showToast('Impossibile caricare il test.');
+      showTestSelectionModal();
+      return;
+    }
 
     loadState();
 
@@ -1674,7 +1670,11 @@ async function init() {
   /* If a test was previously loaded and is stored, reload it */
   if (state.loadedTestId && supabaseClient) {
     const loaded = await loadTestFromSupabase(state.loadedTestId);
-    if (!loaded) showToast('Impossibile ricaricare il test precedente. Uso dati predefiniti.');
+    if (!loaded) {
+      showToast('Impossibile ricaricare il test precedente.');
+      showTestSelectionModal();
+      return;
+    }
   }
 
   startTest();
