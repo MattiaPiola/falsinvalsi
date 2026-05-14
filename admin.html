@@ -868,32 +868,49 @@ function closeCreateTestModal() {
 
 function validateTestJSON() {
   const errEl = document.getElementById('json-error');
+  function fail(msg) { errEl.style.color = '#c0392b'; errEl.textContent = msg; return false; }
   try {
     const val = document.getElementById('test-json-input').value.trim();
-    if (!val) { errEl.textContent = 'Il campo JSON è vuoto.'; return false; }
+    if (!val) return fail('Il campo JSON è vuoto.');
     const parsed = JSON.parse(val);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      errEl.textContent = 'Il JSON deve essere un array di sezioni.'; return false;
-    }
-    for (const sec of parsed) {
-      if (!sec.id || !sec.title || !Array.isArray(sec.questions)) {
-        errEl.textContent = `Sezione non valida: mancano id, title o questions.`; return false;
-      }
-      for (const q of sec.questions) {
-        if (!q.text || !Array.isArray(q.options) || !q.correct) {
-          errEl.textContent = `Domanda non valida nella sezione "${sec.title}".`; return false;
+    if (!Array.isArray(parsed) || parsed.length === 0)
+      return fail('Il JSON deve essere un array di sezioni non vuoto.');
+    for (let sIdx = 0; sIdx < parsed.length; sIdx++) {
+      const sec = parsed[sIdx];
+      const secLabel = `Sezione ${sIdx + 1}`;
+      if (!sec.id)    return fail(`${secLabel}: manca il campo "id".`);
+      if (!sec.title) return fail(`${secLabel}: manca il campo "title".`);
+      if (!Array.isArray(sec.questions))
+        return fail(`${secLabel} ("${sec.title}"): manca il campo "questions" (deve essere un array).`);
+      for (let qIdx = 0; qIdx < sec.questions.length; qIdx++) {
+        const q = sec.questions[qIdx];
+        const qLabel = `Sezione ${sIdx + 1} ("${sec.title}"), domanda ${qIdx + 1}`;
+        if (!q.id)   return fail(`${qLabel}: manca il campo "id".`);
+        if (!q.text) return fail(`${qLabel}: manca il campo "text".`);
+        const type = q.type || 'single';
+        if (!['single', 'multiple', 'open', 'cloze'].includes(type))
+          return fail(`${qLabel}: tipo "${type}" non riconosciuto (valori ammessi: single, multiple, open, cloze).`);
+        if (type === 'single' || type === 'multiple') {
+          if (!Array.isArray(q.options) || q.options.length === 0)
+            return fail(`${qLabel}: tipo "${type}" richiede il campo "options" (array non vuoto).`);
+          if (type === 'single' && !q.correct)
+            return fail(`${qLabel}: tipo "single" richiede il campo "correct" (stringa).`);
+          if (type === 'multiple' && !Array.isArray(q.correct))
+            return fail(`${qLabel}: tipo "multiple" richiede il campo "correct" (array di stringhe).`);
+        } else if (type === 'cloze') {
+          if (!Array.isArray(q.blanks) || q.blanks.length === 0)
+            return fail(`${qLabel}: tipo "cloze" richiede il campo "blanks" (array non vuoto).`);
+          if (!q.correct || typeof q.correct !== 'object' || Array.isArray(q.correct))
+            return fail(`${qLabel}: tipo "cloze" richiede il campo "correct" (oggetto con le risposte attese).`);
         }
       }
     }
-    errEl.textContent = '';
     errEl.style.color = '#2e7d32';
     errEl.textContent = '✓ JSON valido.';
     setTimeout(() => { errEl.textContent = ''; errEl.style.color = '#c0392b'; }, 2000);
     return true;
   } catch (e) {
-    errEl.style.color = '#c0392b';
-    errEl.textContent = 'JSON non valido: ' + e.message;
-    return false;
+    return fail('Sintassi JSON non valida: ' + e.message);
   }
 }
 
