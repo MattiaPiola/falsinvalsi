@@ -336,7 +336,7 @@ La lettura è un'attività che <strong>______</strong> la mente, arricchisce il 
 const DEFAULT_STATE = {
   currentSection:  0,
   currentQuestion: 0,
-  answers:         {},        /* key: "sIdx_qIdx" → label string */
+  answers:         {},        /* key: "sIdx_qIdx" → value depends on type */
   flagged:         [],        /* ["sIdx_qIdx", ...] */
   viewed:          [],        /* ["sIdx_qIdx", ...] */
   studentName:     '',        /* entered at start */
@@ -356,6 +356,12 @@ let state = Object.assign({}, DEFAULT_STATE, {
   lastTotal:   0,
 });
 
+/* Shuffled option order per question – persisted in localStorage */
+let questionShuffles = {};
+
+/* Timer handle for the submit countdown */
+let submitTimerHandle = null;
+
 /* UI-only state (not persisted) */
 let ui = {
   sidebarVisible:    true,
@@ -374,9 +380,121 @@ let ui = {
 };
 
 /* ============================================================
+   QUESTION TYPES  –  JSON specification
+   ============================================================
+   Each question object must include: id, text, instruction, type, correct.
+   Supported types:
+
+   1. "single"  – Multiple choice, select exactly one answer.
+      {
+        "type": "single",
+        "options": [{ "label": "A", "text": "…" }, …],
+        "correct": "A"
+      }
+
+   2. "multiple"  – Multiple choice, select ALL correct answers.
+      {
+        "type": "multiple",
+        "options": [{ "label": "A", "text": "…" }, …],
+        "correct": ["A", "C"]
+      }
+
+   3. "open"  – Free-text response, not auto-graded.
+      {
+        "type": "open"
+        // "correct" is optional; if provided it is shown in the review.
+      }
+
+   4. "cloze"  – Fill-in-the-blank. The "text" field contains {{n}}
+      placeholders that are replaced by inline <input> or <select> elements.
+      {
+        "type": "cloze",
+        "text": "La lettura {{1}} la mente e arricchisce il {{2}}.",
+        "blanks": [
+          { "id": 1, "options": ["nutre","svuota","stanca"] },
+          { "id": 2, "options": null }    // null → free-text <input>
+        ],
+        "correct": { "1": "nutre", "2": "vocabolario" }
+      }
+
+   Notes:
+   – Answer options for "single" and "multiple" are shown in a randomised
+     order that is generated once and persisted in localStorage.
+   – "open" questions are not included in the automatic score total.
+   ============================================================ */
+
+/* ============================================================
    HELPERS
    ============================================================ */
 function qKey(sIdx, qIdx) { return `${sIdx}_${qIdx}`; }
+
+function defaultInstruction(type) {
+  switch (type) {
+    case 'multiple': return 'Seleziona tutte le risposte corrette';
+    case 'open':     return 'Scrivi la tua risposta';
+    case 'cloze':    return 'Completa il testo';
+    default:         return 'Devi selezionare solo una scelta';
+  }
+}
+
+/* Return the options for a question in a stable-random order.
+   The order is generated once per session and stored in questionShuffles. */
+function getShuffledOptions(sIdx, qIdx) {
+  const key  = qKey(sIdx, qIdx);
+  const opts = SECTIONS[sIdx].questions[qIdx].options;
+  if (!opts || !opts.length) return [];
+  if (!questionShuffles[key]) {
+    const indices = opts.map((_, i) => i);
+    for (let i = indices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    questionShuffles[key] = indices;
+  }
+  return questionShuffles[key].map(i => opts[i]);
+}
+
+/* Build the inner HTML for a cloze question, replacing {{n}} with inputs. */
+function buildClozeHtml(q, key) {
+  const blanks  = q.blanks || [];
+  const curAns  = (state.answers[key] && typeof state.answers[key] === 'object'
+                   && !Array.isArray(state.answers[key]))
+                  ? state.answers[key] : {};
+  let html = q.text || '';
+  blanks.forEach(blank => {
+    const blankId     = String(blank.id);
+    const blankValue  = curAns[blankId] || '';
+    const placeholder = `{{${blank.id}}}`;
+    if (blank.options && blank.options.length > 0) {
+      const opts = ['', ...blank.options].map(o =>
+        `<option value="${escHtmlApp(o)}"${blankValue === o && o ? ' selected' : ''}>${o ? escHtmlApp(o) : '—'}</option>`
+      ).join('');
+      html = html.replace(placeholder,
+        `<select class="cloze-blank-select" data-blank-id="${blankId}">${opts}</select>`);
+    } else {
+      html = html.replace(placeholder,
+        `<input type="text" class="cloze-blank" data-blank-id="${blankId}" value="${escHtmlApp(blankValue)}" placeholder="…">`);
+    }
+  });
+  return html;
+}
+
+/* Persist the current values of all blanks inside a cloze container. */
+function saveClozeAnswer(key, q, container) {
+  const blanks = q.blanks || [];
+  const ans    = {};
+  let anyFilled = false;
+  blanks.forEach(blank => {
+    const blankId = String(blank.id);
+    const el      = container.querySelector(`[data-blank-id="${blankId}"]`);
+    if (el && el.value.trim()) { ans[blankId] = el.value; anyFilled = true; }
+  });
+  if (anyFilled) state.answers[key] = ans;
+  else           delete state.answers[key];
+  renderSidebar();
+  renderHeader();
+  saveState();
+}
 
 function totalQuestions() {
   return SECTIONS.reduce((s, sec) => s + sec.questions.length, 0);
@@ -417,6 +535,7 @@ function saveState() {
       submitted:       state.submitted,
       lastScore:       state.lastScore,
       lastTotal:       state.lastTotal,
+      questionShuffles: questionShuffles,
     }));
   } catch (_) { /* localStorage unavailable (private mode or quota exceeded) – silently ignore */ }
 }
@@ -436,6 +555,7 @@ function loadState() {
     state.submitted       = p.submitted    || false;
     state.lastScore       = p.lastScore    || 0;
     state.lastTotal       = p.lastTotal    || 0;
+    questionShuffles      = p.questionShuffles || {};
   } catch (_) { /* Corrupt data in localStorage – start fresh */ }
 }
 
@@ -551,49 +671,98 @@ function buildQuestionTree() {
 
 /* ---- Main content ---- */
 function renderMain() {
-  const sec = SECTIONS[state.currentSection];
-  const q   = sec.questions[state.currentQuestion];
-  const key = qKey(state.currentSection, state.currentQuestion);
+  const sec  = SECTIONS[state.currentSection];
+  const q    = sec.questions[state.currentQuestion];
+  const key  = qKey(state.currentSection, state.currentQuestion);
+  const type = q.type || 'single';
 
   /* text */
   document.getElementById('text-title').textContent       = sec.textTitle;
   document.getElementById('text-content').innerHTML       = sec.text;
   document.getElementById('text-attribution').textContent = sec.attribution;
 
-  /* question */
-  document.getElementById('question-instruction').textContent = q.instruction;
-  document.getElementById('question-text').textContent        = q.text;
+  /* question instruction */
+  document.getElementById('question-instruction').textContent = q.instruction || defaultInstruction(type);
 
-  /* options */
-  const list    = document.getElementById('options-list');
-  const curAns  = state.answers[key];
+  /* question text + type-specific option rendering */
+  const questionTextEl = document.getElementById('question-text');
+  const list           = document.getElementById('options-list');
+  const curAns         = state.answers[key];
+
   list.innerHTML = '';
-  list.classList.toggle('answer-masked', ui.answerMaskActive && !!curAns);
+  list.classList.remove('answer-masked');
 
-  q.options.forEach(opt => {
-    const item = document.createElement('div');
-    item.className = [
-      'option-item',
-      curAns === opt.label ? 'opt-selected' : '',
-      ui.eliminatorActive  ? 'opt-eliminator-mode' : '',
-    ].filter(Boolean).join(' ');
+  if (type === 'cloze') {
+    /* Render question text with inline blanks */
+    questionTextEl.innerHTML = buildClozeHtml(q, key);
+    questionTextEl.querySelectorAll('.cloze-blank, .cloze-blank-select').forEach(el => {
+      const handler = () => saveClozeAnswer(key, q, questionTextEl);
+      el.addEventListener('change', handler);
+      el.addEventListener('input',  handler);
+    });
+  } else if (type === 'open') {
+    questionTextEl.textContent = q.text;
+    const ta = document.createElement('textarea');
+    ta.className   = 'open-answer-textarea';
+    ta.placeholder = 'Scrivi qui la tua risposta…';
+    ta.value       = typeof curAns === 'string' ? curAns : '';
+    ta.addEventListener('input', () => {
+      if (ta.value.trim()) state.answers[key] = ta.value;
+      else                 delete state.answers[key];
+      renderSidebar();
+      renderHeader();
+      saveState();
+    });
+    list.appendChild(ta);
+  } else {
+    /* single / multiple – shuffled options */
+    questionTextEl.textContent = q.text;
+    const isMulti  = type === 'multiple';
+    const selected = isMulti ? (Array.isArray(curAns) ? curAns : []) : null;
+    const options  = getShuffledOptions(state.currentSection, state.currentQuestion);
 
-    item.dataset.label = opt.label;
+    list.classList.toggle('answer-masked',
+      ui.answerMaskActive && (isMulti ? selected.length > 0 : !!curAns));
 
-    item.innerHTML = `
-      <div class="option-radio">
-        <div class="option-radio-inner"></div>
-      </div>
-      <span class="option-label">${opt.label}</span>
-      <span class="option-text">${opt.text}</span>`;
+    options.forEach(opt => {
+      const isSelected = isMulti ? selected.includes(opt.label) : curAns === opt.label;
+      const item = document.createElement('div');
+      item.className = [
+        'option-item',
+        isSelected ? 'opt-selected' : '',
+        ui.eliminatorActive ? 'opt-eliminator-mode' : '',
+      ].filter(Boolean).join(' ');
+      item.dataset.label = opt.label;
 
-    if (ui.eliminatorActive) {
-      item.addEventListener('click', () => eliminateOption(item));
-    } else {
-      item.addEventListener('click', () => selectAnswer(opt.label));
-    }
-    list.appendChild(item);
-  });
+      if (isMulti) {
+        item.innerHTML = `
+          <div class="option-checkbox">
+            <svg class="option-checkbox-inner" viewBox="0 0 12 10" fill="none"
+                 stroke="#fff" stroke-width="2.5">
+              <polyline points="1.5 5 4.5 8 10.5 2"/>
+            </svg>
+          </div>
+          <span class="option-label">${opt.label}</span>
+          <span class="option-text">${opt.text}</span>`;
+      } else {
+        item.innerHTML = `
+          <div class="option-radio">
+            <div class="option-radio-inner"></div>
+          </div>
+          <span class="option-label">${opt.label}</span>
+          <span class="option-text">${opt.text}</span>`;
+      }
+
+      if (ui.eliminatorActive) {
+        item.addEventListener('click', () => eliminateOption(item));
+      } else if (isMulti) {
+        item.addEventListener('click', () => toggleMultiAnswer(opt.label));
+      } else {
+        item.addEventListener('click', () => selectAnswer(opt.label));
+      }
+      list.appendChild(item);
+    });
+  }
 
   /* flag button */
   const flagBtn = document.getElementById('btn-flag');
@@ -630,6 +799,18 @@ function markViewed() {
 function selectAnswer(label) {
   const key = qKey(state.currentSection, state.currentQuestion);
   state.answers[key] = label;
+  renderAll();
+  saveState();
+}
+
+function toggleMultiAnswer(label) {
+  const key     = qKey(state.currentSection, state.currentQuestion);
+  let   current = Array.isArray(state.answers[key]) ? [...state.answers[key]] : [];
+  const idx     = current.indexOf(label);
+  if (idx >= 0) current.splice(idx, 1);
+  else          current.push(label);
+  if (current.length > 0) state.answers[key] = current;
+  else                    delete state.answers[key];
   renderAll();
   saveState();
 }
@@ -966,10 +1147,37 @@ function calculateScore() {
   let score = 0;
   SECTIONS.forEach((sec, sIdx) => {
     sec.questions.forEach((q, qIdx) => {
-      if (state.answers[qKey(sIdx, qIdx)] === q.correct) score++;
+      const key  = qKey(sIdx, qIdx);
+      const ans  = state.answers[key];
+      const type = q.type || 'single';
+      if (!ans) return;
+
+      if (type === 'single') {
+        if (ans === q.correct) score++;
+      } else if (type === 'multiple') {
+        if (q.correct && Array.isArray(q.correct) && Array.isArray(ans)) {
+          if ([...ans].sort().join(',') === [...q.correct].sort().join(',')) score++;
+        }
+      } else if (type === 'cloze') {
+        if (q.blanks && q.correct && typeof ans === 'object' && !Array.isArray(ans)) {
+          const allOk = q.blanks.every(b => {
+            const blankId = String(b.id);
+            return (ans[blankId] || '').trim().toLowerCase() ===
+                   (q.correct[blankId] || '').trim().toLowerCase();
+          });
+          if (allOk) score++;
+        }
+      }
+      /* 'open' type: not auto-scored */
     });
   });
   return score;
+}
+
+/* Number of questions that are auto-gradable (i.e. not open-ended). */
+function autoGradableTotal() {
+  return SECTIONS.reduce((s, sec) =>
+    s + sec.questions.filter(q => (q.type || 'single') !== 'open').length, 0);
 }
 
 /* ============================================================
@@ -980,6 +1188,7 @@ function showConfirmSubmit() {
 
   const total      = totalQuestions();
   const answered   = answeredCount();
+  const viewed     = viewedCount();
   const unanswered = total - answered;
   const flagged    = flaggedCount();
 
@@ -998,10 +1207,48 @@ function showConfirmSubmit() {
     </div>` : ''}
   `;
   document.getElementById('confirm-submit-stats').innerHTML = statsHtml;
+
+  /* Warning for unanswered questions */
+  const warningEl = document.getElementById('submit-warning');
+  if (unanswered > 0) {
+    warningEl.textContent = `⚠️ Attenzione: hai ${unanswered} domanda${unanswered === 1 ? '' : 'e'} senza risposta.`;
+    warningEl.style.display = 'flex';
+  } else {
+    warningEl.style.display = 'none';
+  }
+
+  /* Countdown timer when not all questions have been viewed */
+  const timerEl    = document.getElementById('submit-timer');
+  const confirmBtn = document.getElementById('btn-confirm-submit');
+  if (submitTimerHandle) { clearInterval(submitTimerHandle); submitTimerHandle = null; }
+
+  if (viewed < total) {
+    let remaining = 5;
+    confirmBtn.disabled = true;
+    timerEl.innerHTML = `Non hai visualizzato tutte le domande.<br>
+      Potrai confermare tra <span class="submit-timer-count">${remaining}</span>s`;
+    timerEl.style.display = 'block';
+    submitTimerHandle = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(submitTimerHandle);
+        submitTimerHandle = null;
+        confirmBtn.disabled = false;
+        timerEl.style.display = 'none';
+      } else {
+        timerEl.querySelector('.submit-timer-count').textContent = remaining;
+      }
+    }, 1000);
+  } else {
+    confirmBtn.disabled = false;
+    timerEl.style.display = 'none';
+  }
+
   document.getElementById('modal-confirm-submit').style.display = 'flex';
 }
 
 function closeConfirmSubmit() {
+  if (submitTimerHandle) { clearInterval(submitTimerHandle); submitTimerHandle = null; }
   document.getElementById('modal-confirm-submit').style.display = 'none';
 }
 
@@ -1013,7 +1260,7 @@ async function confirmSubmit() {
   confirmBtn.innerHTML = '<span class="modal-spinner"></span>Salvataggio…';
 
   const score = calculateScore();
-  const total = totalQuestions();
+  const total = autoGradableTotal();
 
   if (supabaseClient) {
     try {
@@ -1164,6 +1411,7 @@ function resetStateForTest(testId, keepName) {
     studentName:  keepName || '',
     loadedTestId: testId || null,
   });
+  questionShuffles = {};
   saveState();
 }
 
@@ -1178,16 +1426,98 @@ function showAnswerReview() {
   SECTIONS.forEach((sec, sIdx) => {
     html += `<p class="review-section-title">${escHtmlApp(sec.title)}</p>`;
     sec.questions.forEach((q, qIdx) => {
-      const key       = qKey(sIdx, qIdx);
-      const given     = state.answers[key];
-      const correct   = q.correct;
-      const isCorrect = given === correct;
-      const noAnswer  = !given;
+      const key  = qKey(sIdx, qIdx);
+      const ans  = state.answers[key];
+      const type = q.type || 'single';
 
-      const resultIcon  = noAnswer ? '<span class="rq-no-answer">—</span>'
-                        : isCorrect ? '<span class="rq-correct">✓</span>'
-                        : '<span class="rq-wrong">✗</span>';
-      const resultLabel = noAnswer ? 'Senza risposta' : isCorrect ? 'Corretta' : 'Errata';
+      let resultIcon, resultLabel, answersHtml;
+
+      if (type === 'single') {
+        const noAnswer  = !ans;
+        const isCorrect = ans === q.correct;
+        resultIcon  = noAnswer  ? '<span class="rq-no-answer">—</span>'
+                    : isCorrect ? '<span class="rq-correct">✓</span>'
+                    :             '<span class="rq-wrong">✗</span>';
+        resultLabel = noAnswer ? 'Senza risposta' : isCorrect ? 'Corretta' : 'Errata';
+        answersHtml = '';
+        q.options.forEach(opt => {
+          const isGiven      = opt.label === ans;
+          const isCorrectOpt = opt.label === q.correct;
+          let cls = '';
+          if      (isGiven && isCorrectOpt) cls = 'both';
+          else if (isGiven)                 cls = 'missed';
+          else if (isCorrectOpt)            cls = 'correct-answer';
+          if (isGiven || isCorrectOpt) {
+            answersHtml += `<span class="rq-answer ${cls}">${escHtmlApp(opt.label)}: ${escHtmlApp(opt.text)}</span>`;
+          }
+        });
+
+      } else if (type === 'multiple') {
+        const selected  = Array.isArray(ans) ? ans : [];
+        const correct   = Array.isArray(q.correct) ? q.correct : [];
+        const noAnswer  = selected.length === 0;
+        const isCorrect = !noAnswer &&
+          [...selected].sort().join(',') === [...correct].sort().join(',');
+        resultIcon  = noAnswer  ? '<span class="rq-no-answer">—</span>'
+                    : isCorrect ? '<span class="rq-correct">✓</span>'
+                    :             '<span class="rq-wrong">✗</span>';
+        resultLabel = noAnswer ? 'Senza risposta' : isCorrect ? 'Corretta' : 'Errata (parziale)';
+        answersHtml = '';
+        q.options.forEach(opt => {
+          const isGiven      = selected.includes(opt.label);
+          const isCorrectOpt = correct.includes(opt.label);
+          let cls = '';
+          if      (isGiven && isCorrectOpt) cls = 'both';
+          else if (isGiven)                 cls = 'missed';
+          else if (isCorrectOpt)            cls = 'correct-answer';
+          if (isGiven || isCorrectOpt) {
+            answersHtml += `<span class="rq-answer ${cls}">${escHtmlApp(opt.label)}: ${escHtmlApp(opt.text)}</span>`;
+          }
+        });
+
+      } else if (type === 'open') {
+        const noAnswer = !ans || !(typeof ans === 'string' && ans.trim());
+        resultIcon  = noAnswer ? '<span class="rq-no-answer">—</span>'
+                               : '<span class="rq-open">✎</span>';
+        resultLabel = noAnswer ? 'Senza risposta' : 'Risposta libera';
+        answersHtml = noAnswer ? ''
+          : `<span class="rq-answer rq-open-text">${escHtmlApp(ans)}</span>`;
+        if (q.correct && !noAnswer) {
+          answersHtml += `<span class="rq-answer correct-answer">Attesa: ${escHtmlApp(q.correct)}</span>`;
+        }
+
+      } else if (type === 'cloze') {
+        const blanks   = q.blanks || [];
+        const correct  = q.correct || {};
+        const ansObj   = (ans && typeof ans === 'object' && !Array.isArray(ans)) ? ans : {};
+        const noAnswer = !Object.keys(ansObj).length;
+        const allOk    = !noAnswer && blanks.every(b => {
+          const blankId = String(b.id);
+          return (ansObj[blankId] || '').trim().toLowerCase() ===
+                 (correct[blankId]  || '').trim().toLowerCase();
+        });
+        resultIcon  = noAnswer ? '<span class="rq-no-answer">—</span>'
+                    : allOk    ? '<span class="rq-correct">✓</span>'
+                    :            '<span class="rq-wrong">✗</span>';
+        resultLabel = noAnswer ? 'Senza risposta' : allOk ? 'Corretta' : 'Errata';
+        answersHtml = '';
+        blanks.forEach(b => {
+          const blankId  = String(b.id);
+          const given    = ansObj[blankId] || '';
+          const expected = correct[blankId] || '';
+          const isOk     = given.trim().toLowerCase() === expected.trim().toLowerCase();
+          const cls      = !given ? '' : isOk ? 'both' : 'missed';
+          answersHtml += `<span class="rq-answer ${cls}">Spazio ${blankId}: ${escHtmlApp(given) || '—'}</span>`;
+          if (!isOk && expected) {
+            answersHtml += `<span class="rq-answer correct-answer">${escHtmlApp(expected)}</span>`;
+          }
+        });
+
+      } else {
+        resultIcon  = '<span class="rq-no-answer">—</span>';
+        resultLabel = 'Tipo sconosciuto';
+        answersHtml = '';
+      }
 
       html += `<div class="review-question">
         <div class="review-question-header">
@@ -1197,21 +1527,8 @@ function showAnswerReview() {
         </div>
         <div class="review-question-body">
           <div class="rq-text">${escHtmlApp(q.text)}</div>
-          <div class="rq-answers">`;
-
-      q.options.forEach(opt => {
-        const isGiven      = opt.label === given;
-        const isCorrectOpt = opt.label === correct;
-        let cls = '';
-        if (isGiven && isCorrectOpt) cls = 'both';
-        else if (isGiven)            cls = 'missed';
-        else if (isCorrectOpt)       cls = 'correct-answer';
-        if (isGiven || isCorrectOpt) {
-          html += `<span class="rq-answer ${cls}">${escHtmlApp(opt.label)}: ${escHtmlApp(opt.text)}</span>`;
-        }
-      });
-
-      html += `</div></div></div>`;
+          <div class="rq-answers">${answersHtml}</div>
+        </div></div>`;
     });
   });
 

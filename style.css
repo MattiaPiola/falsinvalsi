@@ -769,23 +769,19 @@ mark.hl {
 .review-question-header .rq-correct   { color: #2e7d32; }
 .review-question-header .rq-wrong     { color: #c62828; }
 .review-question-header .rq-no-answer { color: #888; }
+.review-question-header .rq-open      { color: #1565c0; }
 
 .review-question-body { padding: 10px 12px; }
 .review-question-body .rq-text { color: #333; margin-bottom: 8px; line-height: 1.4; }
 .review-question-body .rq-answers { display: flex; gap: 8px; flex-wrap: wrap; }
 
-.rq-answer {
-  padding: 3px 10px;
-  border-radius: 3px;
-  font-size: 12px;
-  font-weight: 600;
-  border: 1px solid transparent;
-}
+.rq-answer { padding: 3px 10px; border-radius: 3px; font-size: 12px; font-weight: 600; border: 1px solid transparent; }
 
 .rq-answer.student-answer { background: #e3f2fd; color: #1565c0; border-color: #90caf9; }
 .rq-answer.correct-answer { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
 .rq-answer.both           { background: #e8f5e9; color: #2e7d32; border-color: #66bb6a; }
 .rq-answer.missed         { background: #fbe9e7; color: #c62828; border-color: #ef9a9a; }
+.rq-answer.rq-open-text   { background: #f3f3f3; color: #333;    border-color: #ddd; font-weight: 400; white-space: pre-wrap; max-width: 100%; }
 
 
 .modal-box h2 {
@@ -972,3 +968,118 @@ mark.hl {
   .progress-wrapper { display: none; }
   .header-menu-btn span { display: none; }
 }
+
+/* ============================================================
+   ANSWER REVIEW MODAL  –  must appear above submission-complete
+   ============================================================ */
+#modal-answer-review { z-index: 1100; }
+
+/* ============================================================
+   SUBMIT WARNING  +  TIMER
+   ============================================================ */
+.submit-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #fff3e0;
+  border: 1px solid #ffe0b2;
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #e65100;
+}
+
+.submit-timer {
+  text-align: center;
+  font-size: 13px;
+  color: #666;
+  background: #f0f4ff;
+  border: 1px solid #c5d3f0;
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+.submit-timer-count {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--primary);
+  display: inline-block;
+  min-width: 28px;
+}
+
+/* ============================================================
+   OPEN QUESTION  –  free-text textarea
+   ============================================================ */
+.open-answer-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  line-height: 1.6;
+  color: var(--text);
+}
+.open-answer-textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(30,90,150,.15);
+}
+
+/* ============================================================
+   CLOZE QUESTION  –  inline blanks
+   ============================================================ */
+.cloze-blank,
+.cloze-blank-select {
+  display: inline-block;
+  padding: 2px 8px;
+  border: none;
+  border-bottom: 2px solid var(--primary);
+  background: #f0f7ff;
+  border-radius: 2px 2px 0 0;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--primary);
+  outline: none;
+  vertical-align: baseline;
+  cursor: text;
+}
+.cloze-blank {
+  min-width: 80px;
+}
+.cloze-blank:focus,
+.cloze-blank-select:focus {
+  border-bottom-color: var(--primary-dark);
+  background: #ddeaf8;
+}
+
+/* ============================================================
+   MULTIPLE-CHOICE  –  checkbox variant
+   ============================================================ */
+.option-checkbox {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #999;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+  transition: border-color .1s, background .1s;
+}
+.option-item.opt-selected .option-checkbox {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+.option-checkbox-inner {
+  width: 10px;
+  height: 10px;
+  display: none;
+}
+.option-item.opt-selected .option-checkbox-inner { display: block; }
