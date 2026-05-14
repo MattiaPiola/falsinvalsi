@@ -1146,16 +1146,7 @@ async function selectTestFromModal(testId) {
   const loaded = await loadTestFromSupabase(testId);
   if (!loaded) showToast('Impossibile caricare il test selezionato.');
 
-  /* Reset state for the newly selected test */
-  const name = state.studentName;
-  state = Object.assign({}, DEFAULT_STATE, {
-    flagged:      new Set(),
-    viewed:       new Set(),
-    studentName:  name,
-    loadedTestId: testId,
-  });
-  saveState();
-
+  resetStateForTest(testId, state.studentName);
   startTest();
 }
 
@@ -1163,6 +1154,17 @@ function startTest() {
   markViewed();
   renderAll();
   if (!state.studentName) showStudentNameModal();
+}
+
+/* Resets student progress for a given test, optionally preserving the student name. */
+function resetStateForTest(testId, keepName) {
+  state = Object.assign({}, DEFAULT_STATE, {
+    flagged:      new Set(),
+    viewed:       new Set(),
+    studentName:  keepName || '',
+    loadedTestId: testId || null,
+  });
+  saveState();
 }
 
 /* ============================================================
@@ -1232,13 +1234,7 @@ function escHtmlApp(str) {
 function resetForNewUser() {
   /* Keep the current test, reset all student-specific state */
   const testId = state.loadedTestId;
-  state = Object.assign({}, DEFAULT_STATE, {
-    flagged:      new Set(),
-    viewed:       new Set(),
-    studentName:  '',
-    loadedTestId: testId,
-  });
-  saveState();
+  resetStateForTest(testId);
 
   /* Hide submission-complete page, show the main app */
   document.getElementById('submission-complete').style.display = 'none';
@@ -1271,14 +1267,7 @@ async function init() {
 
     /* If the test_id changed (or first time with this test), reset progress */
     if (state.loadedTestId !== testParam) {
-      const name = state.studentName;
-      state = Object.assign({}, DEFAULT_STATE, {
-        flagged:      new Set(),
-        viewed:       new Set(),
-        studentName:  name,
-        loadedTestId: testParam,
-      });
-      saveState();
+      resetStateForTest(testParam, state.studentName);
     }
 
     if (state.submitted) {
