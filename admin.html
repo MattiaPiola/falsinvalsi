@@ -576,6 +576,7 @@
     <div class="overlay-body" id="detail-modal-body"></div>
     <div class="overlay-footer">
       <button class="btn btn-outline" onclick="closeDetailModal()">Chiudi</button>
+      <button class="btn btn-primary" id="btn-print-submission" onclick="printSubmission(currentDetailIdx)">🖨 Stampa</button>
     </div>
   </div>
 </div>
@@ -630,6 +631,7 @@ let allTests = [];     // cached tests
 let allSubmissions = []; // cached submissions
 let pendingDeleteType = null; // 'test' | 'submission'
 let pendingDeleteId   = null;
+let currentDetailIdx  = null; // index of currently open submission detail
 
 const JSON_EXAMPLE = [
   {
@@ -847,9 +849,11 @@ async function viewTestJSON(testId) {
   if (!sb) return;
   const { data } = await sb.from('tests').select('*').eq('id', testId).single();
   if (!data) return;
+  currentDetailIdx = null;
   document.getElementById('detail-modal-title').textContent = 'JSON – ' + data.title;
   document.getElementById('detail-modal-body').innerHTML =
     `<pre style="font-size:11px; white-space:pre-wrap; word-break:break-all;">${escHtml(JSON.stringify(data.sections, null, 2))}</pre>`;
+  document.getElementById('btn-print-submission').style.display = 'none';
   document.getElementById('modal-submission-detail').style.display = 'flex';
 }
 
@@ -1061,6 +1065,7 @@ function renderSubmissionsTable(submissions) {
       <td>${date}</td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="showSubmissionDetail(${idx})">👁 Dettagli</button>
+        <button class="btn btn-outline btn-sm" onclick="printSubmission(${idx})">🖨 Stampa</button>
         <button class="btn btn-danger btn-sm" onclick="confirmDeleteSubmission('${s.id}', '${escAttr(s.student_name)}')">🗑</button>
       </td>
     </tr>`;
@@ -1079,7 +1084,9 @@ async function showSubmissionDetail(idx) {
   const s = allSubmissions[idx];
   if (!s) return;
 
+  currentDetailIdx = idx;
   document.getElementById('detail-modal-title').textContent = `Risposte di ${s.student_name}`;
+  document.getElementById('btn-print-submission').style.display = '';
 
   const pct      = s.total > 0 ? Math.round(s.score / s.total * 100) : 0;
   const testTitle = getTestTitle(s.test_id);
@@ -1160,6 +1167,7 @@ async function showSubmissionDetail(idx) {
 
 function closeDetailModal() {
   document.getElementById('modal-submission-detail').style.display = 'none';
+  currentDetailIdx = null;
 }
 
 function confirmDeleteSubmission(id, name) {
@@ -1168,6 +1176,232 @@ function confirmDeleteSubmission(id, name) {
   document.getElementById('delete-confirm-msg').textContent =
     `Sei sicuro di voler eliminare la risposta di "${name}"?`;
   document.getElementById('modal-delete-confirm').style.display = 'flex';
+}
+
+/* ============================================================
+   PRINT / PDF
+============================================================ */
+async function printSubmission(idx) {
+  const s = allSubmissions[idx];
+  if (!s) return;
+
+  showToast('Preparazione stampa…');
+
+  /* Load test sections */
+  let sections = null;
+  if (s.test_id && sb) {
+    try {
+      const { data } = await sb.from('tests').select('sections').eq('id', s.test_id).single();
+      if (data) sections = data.sections;
+    } catch (_) {}
+  }
+
+  const pct       = s.total > 0 ? Math.round(s.score / s.total * 100) : 0;
+  const testTitle = getTestTitle(s.test_id);
+  const date      = new Date(s.submitted_at).toLocaleString('it-IT', { dateStyle: 'long', timeStyle: 'short' });
+
+  let questionsHtml = '';
+
+  if (sections) {
+    let qGlobal = 0;
+    sections.forEach((sec, sIdx) => {
+      questionsHtml += `<div class="section-title">${escHtml(sec.title)}</div>`;
+      sec.questions.forEach((q, qIdx) => {
+        qGlobal++;
+        const key     = `${sIdx}_${qIdx}`;
+        const given   = s.answers ? s.answers[key] : undefined;
+        const correct = q.correct;
+
+        const noAnswer = given == null || given === '' ||
+          (Array.isArray(given) && given.length === 0);
+
+        let isCorrect = false;
+        if (!noAnswer) {
+          if (q.type === 'multiple') {
+            isCorrect = Array.isArray(given) && Array.isArray(correct) &&
+              given.length === correct.length &&
+              given.every(g => correct.includes(g));
+          } else if (q.type !== 'open' && q.type !== 'cloze') {
+            isCorrect = given === correct;
+          }
+        }
+
+        const statusClass = noAnswer ? 'no-answer' : isCorrect ? 'correct' : 'wrong';
+        const statusText  = noAnswer ? '—' : isCorrect ? '✓ Corretta' : '✗ Errata';
+
+        questionsHtml += `<div class="question ${statusClass}">
+          <div class="question-header">
+            <span class="question-num">Domanda ${qGlobal}</span>
+            <span class="question-status">${statusText}</span>
+          </div>
+          <div class="question-text">${escHtml(q.text)}</div>`;
+
+        if (q.type === 'single' || q.type === 'multiple') {
+          questionsHtml += '<div class="options">';
+          q.options.forEach(opt => {
+            const isGiven = q.type === 'multiple'
+              ? (Array.isArray(given) && given.includes(opt.label))
+              : opt.label === given;
+            const isCorrectOpt = q.type === 'multiple'
+              ? (Array.isArray(correct) && correct.includes(opt.label))
+              : opt.label === correct;
+
+            let cls = '';
+            let marker = '';
+            if (isGiven && isCorrectOpt)  { cls = 'opt-both';    marker = '✓ ←'; }
+            else if (isGiven)             { cls = 'opt-wrong';   marker = '←'; }
+            else if (isCorrectOpt)        { cls = 'opt-correct'; marker = '✓'; }
+
+            questionsHtml += `<div class="option ${cls}">
+              <span class="opt-label">${escHtml(opt.label)}.</span>
+              <span class="opt-text">${escHtml(opt.text)}</span>
+              <span class="opt-marker">${marker}</span>
+            </div>`;
+          });
+          questionsHtml += '</div>';
+
+          if (!noAnswer && !isCorrect) {
+            questionsHtml += `<div class="answer-legend">
+              <span class="leg-student">← risposta dello studente</span>
+              <span class="leg-correct">✓ risposta corretta</span>
+            </div>`;
+          }
+        } else if (q.type === 'open') {
+          questionsHtml += `<div class="open-answer">
+            <div class="open-label">Risposta dello studente:</div>
+            <div class="open-text">${escHtml(given || '(nessuna risposta)')}</div>
+          </div>`;
+        } else if (q.type === 'cloze') {
+          questionsHtml += '<div class="cloze-answers">';
+          if (q.blanks) {
+            q.blanks.forEach((blank, bIdx) => {
+              const stuAns  = given && typeof given === 'object' ? given[bIdx] : undefined;
+              const corrAns = q.correct ? q.correct[bIdx] : undefined;
+              const ok      = stuAns && corrAns &&
+                stuAns.trim().toLowerCase() === String(corrAns).trim().toLowerCase();
+              const blankCls = ok ? 'blank-correct' : (stuAns ? 'blank-wrong' : 'blank-empty');
+              questionsHtml += `<div class="cloze-blank ${blankCls}">
+                <span class="blank-num">Spazio ${bIdx + 1}:</span>
+                <span class="blank-student">${escHtml(stuAns || '—')}</span>
+                ${!ok && corrAns ? `<span class="blank-expected">Atteso: ${escHtml(corrAns)}</span>` : ''}
+              </div>`;
+            });
+          }
+          questionsHtml += '</div>';
+        }
+
+        questionsHtml += '</div>';
+      });
+    });
+  } else {
+    questionsHtml = '<p style="color:#888; margin-top:12px;">Dettaglio domande non disponibile.</p>';
+    if (s.answers) {
+      questionsHtml += '<table style="width:100%; border-collapse:collapse; margin-top:12px;">' +
+        '<thead><tr><th style="text-align:left; border-bottom:2px solid #ddd; padding:6px;">Domanda</th>' +
+        '<th style="text-align:left; border-bottom:2px solid #ddd; padding:6px;">Risposta</th></tr></thead><tbody>';
+      Object.entries(s.answers).forEach(([k, v]) => {
+        questionsHtml += `<tr><td style="padding:5px 6px; border-bottom:1px solid #eee;">${escHtml(k)}</td>` +
+          `<td style="padding:5px 6px; border-bottom:1px solid #eee; font-weight:bold;">${escHtml(String(v))}</td></tr>`;
+      });
+      questionsHtml += '</tbody></table>';
+    }
+  }
+
+  const printHtml = `<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Test – ${escHtml(s.student_name)}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #111; background: #fff; padding: 15mm 18mm; }
+    .print-header { margin-bottom: 20px; border-bottom: 2px solid #1e5a96; padding-bottom: 12px; }
+    .print-header h1 { font-size: 16pt; color: #1e5a96; margin-bottom: 8px; }
+    .print-meta { display: flex; gap: 24px; flex-wrap: wrap; font-size: 11pt; }
+    .print-meta span { color: #444; }
+    .print-meta strong { color: #111; }
+    .score-box { background: #1e5a96; color: #fff; padding: 2px 10px; border-radius: 12px; font-weight: bold; font-size: 11pt; }
+    .section-title { font-size: 12pt; font-weight: bold; color: #1e5a96; margin: 18px 0 8px; text-transform: uppercase; letter-spacing: 0.5px; border-top: 1px solid #ccc; padding-top: 10px; }
+    .question { margin-bottom: 12px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; page-break-inside: avoid; }
+    .question.correct  { border-left: 4px solid #2e7d32; }
+    .question.wrong    { border-left: 4px solid #c62828; }
+    .question.no-answer{ border-left: 4px solid #aaa; }
+    .question-header { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; background: #f5f5f5; font-size: 10pt; border-bottom: 1px solid #eee; }
+    .question-num { font-weight: bold; color: #333; }
+    .question-status { font-weight: bold; }
+    .correct  .question-status { color: #2e7d32; }
+    .wrong    .question-status { color: #c62828; }
+    .no-answer .question-status { color: #888; }
+    .question-text { padding: 8px 10px; font-size: 11pt; color: #222; line-height: 1.5; border-bottom: 1px solid #eee; }
+    .options { padding: 6px 10px; }
+    .option { display: flex; align-items: baseline; gap: 6px; padding: 3px 5px; border-radius: 3px; margin-bottom: 2px; font-size: 11pt; }
+    .opt-both    { background: #e8f5e9; }
+    .opt-correct { background: #e8f5e9; }
+    .opt-wrong   { background: #fbe9e7; }
+    .opt-label   { font-weight: bold; min-width: 20px; }
+    .opt-text    { flex: 1; }
+    .opt-marker  { font-weight: bold; min-width: 28px; text-align: right; }
+    .opt-both .opt-marker, .opt-correct .opt-marker { color: #2e7d32; }
+    .opt-wrong .opt-marker { color: #c62828; }
+    .answer-legend { padding: 3px 10px 7px; font-size: 9pt; display: flex; gap: 16px; color: #555; }
+    .leg-student { color: #c62828; font-style: italic; }
+    .leg-correct { color: #2e7d32; font-style: italic; }
+    .open-answer { padding: 7px 10px; }
+    .open-label  { font-size: 9pt; color: #777; margin-bottom: 3px; }
+    .open-text   { font-style: italic; color: #333; line-height: 1.5; }
+    .cloze-answers { padding: 6px 10px; }
+    .cloze-blank { display: flex; gap: 10px; align-items: baseline; padding: 2px 0; font-size: 11pt; }
+    .blank-num      { font-weight: bold; min-width: 72px; }
+    .blank-correct  .blank-student { color: #2e7d32; font-weight: bold; }
+    .blank-wrong    .blank-student { color: #c62828; text-decoration: line-through; }
+    .blank-empty    .blank-student { color: #999; }
+    .blank-expected { color: #2e7d32; font-style: italic; }
+    .legend-box { margin-bottom: 18px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 10pt; }
+    .legend-box h4 { margin-bottom: 6px; color: #333; }
+    .legend-row { display: flex; gap: 20px; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-color { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+    .print-btn-row { margin-top: 22px; text-align: center; }
+    .print-btn { padding: 9px 24px; background: #1e5a96; color: #fff; border: none; border-radius: 4px; font-size: 12pt; cursor: pointer; }
+    @media print {
+      .no-print { display: none !important; }
+      body { padding: 0; }
+      .question { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-header">
+    <h1>${escHtml(testTitle)}</h1>
+    <div class="print-meta">
+      <span>Studente: <strong>${escHtml(s.student_name)}</strong></span>
+      <span>Data: <strong>${date}</strong></span>
+      <span>Punteggio: <span class="score-box">${s.score}/${s.total} (${pct}%)</span></span>
+    </div>
+  </div>
+  <div class="legend-box no-print">
+    <h4>Legenda:</h4>
+    <div class="legend-row">
+      <div class="legend-item"><div class="legend-color" style="background:#e8f5e9;border:1px solid #a5d6a7;"></div> Risposta corretta (✓)</div>
+      <div class="legend-item"><div class="legend-color" style="background:#fbe9e7;border:1px solid #ef9a9a;"></div> Risposta errata dello studente (←)</div>
+    </div>
+  </div>
+  ${questionsHtml}
+  <div class="print-btn-row no-print">
+    <button class="print-btn" onclick="window.print()">🖨 Stampa / Salva PDF</button>
+  </div>
+</body>
+</html>`;
+
+  const blob = new Blob([printHtml], { type: 'text/html;charset=utf-8' });
+  const blobUrl = URL.createObjectURL(blob);
+  const win = window.open(blobUrl, '_blank', 'width=960,height=720');
+  if (!win) {
+    URL.revokeObjectURL(blobUrl);
+    showToast('Popup bloccato dal browser. Abilita i popup per stampare.');
+    return;
+  }
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
 }
 
 /* ============================================================
